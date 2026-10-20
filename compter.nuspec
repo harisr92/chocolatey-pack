@@ -35,7 +35,7 @@ This is a nuspec. It mostly adheres to https://docs.nuget.org/create/Nuspec-Refe
     <!-- == SOFTWARE SPECIFIC SECTION == -->
     <!-- This section is about the software itself -->
     <title>compter-tui (Install)</title>
-    <authors>harikrishnansr92@gmail.com</authors>
+    <authors>harisr92</authors>
     <!-- projectUrl is required for the community feed -->
     <projectUrl>https://github.com/harisr92/accounting-tui/releases</projectUrl>
     <!-- There are a number of CDN Services that can be used for hosting the Icon for a package. More information can be found here: https://docs.chocolatey.org/en-us/create/create-packages#package-icon-guidelines -->
