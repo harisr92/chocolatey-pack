@@ -29,12 +29,12 @@ $rawArch = if ($env:PROCESSOR_ARCHITEW6432) {
 
 if ($rawArch -match 'ARM64') {
   $fileName = "compter-tui-windows-arm64.zip"
-  $checksum = '2e81ea2322dc34634584ae063e100f6a1d4e91479e1c8a8cafe4ac466b0d7875'
+  $checksum = 'a560db93a88d40280f95348f43bafebc3ba0139dd28aedbe967544e50c4df58e'
 } elseif ($rawArch -match 'AMD64|x86_64') {
   $fileName = "compter-tui-windows-x86_64.zip"
-  $checksum = 'bb7e2b5ab831521c8603b31198768537cebb73ade909367ee28756d960a35a27'
+  $checksum = 'sha256:52ebb9e6de0e6eb4fdaa886876b94e0c371c61cbfae32b6344386bff67c2889252ebb9e6de0e6eb4fdaa886876b94e0c371c61cbfae32b6344386bff67c28892'
 } else {
-  throw "Unsupported processor architecture: $arch"
+  throw "Unsupported processor architecture: $rawArch"
 }
 
 $url = "$baseUrl/$fileName"
