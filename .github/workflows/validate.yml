@@ -1,0 +1,77 @@
+name: Validate package
+
+# Mirrors the community repository moderation checks:
+# - Validation: static nuspec/script rules (CPMR0007, 0009, 0014, 0019, 0022, 0023, 0032, 0040)
+# - Verification: same sequence package-verifier runs (install x86, upgrade x86, install default, uninstall)
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validation rules
+        run: |
+          $errors = @()
+          $meta = ([xml](Get-Content compter.nuspec -Raw -Encoding utf8)).package.metadata
+          foreach ($field in 'projectUrl', 'licenseUrl', 'packageSourceUrl', 'tags', 'title', 'summary', 'releaseNotes') {
+            if (-not $meta.$field) { $errors += "nuspec: <$field> is missing" }
+          }
+          if ($meta.requireLicenseAcceptance -eq 'true') { $errors += 'nuspec: requireLicenseAcceptance must be false' }
+          if ($meta.tags -match ',') { $errors += 'nuspec: tags must be space separated' }
+          if ($meta.tags -match 'chocolatey') { $errors += 'nuspec: tags must not contain "chocolatey"' }
+          if ($meta.description.Length -lt 30 -or $meta.description.Length -gt 4000) {
+            $errors += "nuspec: description length $($meta.description.Length) is outside 30-4000"
+          }
+          $files = @('compter.nuspec') + (Get-ChildItem tools -Recurse -File).FullName
+          foreach ($f in $files) {
+            $text = Get-Content $f -Raw
+            if ($text -match '__[A-Z_]+__') { $errors += "${f}: contains template placeholder $($Matches[0])" }
+            if ($text -match 'Before releasing this package|_TODO\.md') { $errors += "${f}: contains template comments" }
+          }
+          if ($errors) { $errors | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
+          Write-Host 'All validation rules passed'
+
+      - name: Pack
+        run: |
+          choco pack compter.nuspec --outputdirectory out
+          if ($LASTEXITCODE -ne 0) { throw 'choco pack failed' }
+
+      - name: Install (forced x86)
+        run: |
+          choco install compter-tui --source "$PWD\out" --x86 -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'x86 install failed' }
+
+      - name: Upgrade (forced x86)
+        run: |
+          choco upgrade compter-tui --source "$PWD\out" --x86 -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'x86 upgrade failed' }
+
+      - name: Install (default)
+        run: |
+          choco install compter-tui --source "$PWD\out" --force -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'default install failed' }
+          if (-not (Get-Command compter-tui -ErrorAction SilentlyContinue)) { throw 'compter-tui shim not on PATH' }
+
+      - name: Uninstall
+        run: |
+          choco uninstall compter-tui -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'uninstall failed' }
+          if (Get-ChildItem "$env:ChocolateyInstall\bin" -Filter 'compter*') { throw 'compter shim left behind after uninstall' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: out/*.nupkg

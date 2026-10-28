@@ -3,12 +3,22 @@ name: Publish to Chocolatey
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validate and pack only, skip pushing to Chocolatey
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+
   publish:
+    needs: validate
     runs-on: windows-latest
     defaults:
       run:
@@ -19,26 +29,31 @@ jobs:
       - name: Verify tag matches nuspec version
         id: version
         run: |
+          $nuspecVersion = ([xml](Get-Content compter.nuspec -Raw -Encoding utf8)).package.metadata.version
           $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
-          $nuspecVersion = ([xml](Get-Content compter.nuspec)).package.metadata.version
-          if ($tagVersion -ne $nuspecVersion) {
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $tagVersion -ne $nuspecVersion) {
             throw "Tag version '$tagVersion' does not match nuspec version '$nuspecVersion'"
           }
           "version=$nuspecVersion" >> $env:GITHUB_OUTPUT
 
-      - name: Pack
-        run: choco pack compter.nuspec --outputdirectory out
+      - uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: out
 
-      - name: Smoke test install
+      - name: Dry run summary
+        if: inputs.dry_run
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_SECRET }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          choco install compter-tui --source "$PWD\out" -y --no-progress
-          if ($LASTEXITCODE -ne 0) { throw "choco install failed" }
-          Get-ChildItem "$env:ChocolateyInstall\bin" -Filter 'compter*'
-          if (-not (Get-ChildItem "$env:ChocolateyInstall\bin" -Filter 'compter*')) {
-            throw "No compter shim found in $env:ChocolateyInstall\bin"
-          }
+          $nupkg = "out\compter-tui.$env:VERSION.nupkg"
+          if (-not (Test-Path $nupkg)) { throw "$nupkg not found" }
+          Write-Host "Dry run: would push $nupkg to https://push.chocolatey.org/"
+          if (-not $env:CHOCO_API_KEY) { Write-Host '::warning::CHOCO_API_SECRET is not available to this run' }
 
       - name: Push to Chocolatey
+        if: ${{ !inputs.dry_run }}
         env:
           CHOCO_API_KEY: ${{ secrets.CHOCO_API_SECRET }}
           VERSION: ${{ steps.version.outputs.version }}
