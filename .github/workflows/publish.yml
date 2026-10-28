@@ -1,0 +1,47 @@
+name: Publish to Chocolatey
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches nuspec version
+        id: version
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          $nuspecVersion = ([xml](Get-Content compter.nuspec)).package.metadata.version
+          if ($tagVersion -ne $nuspecVersion) {
+            throw "Tag version '$tagVersion' does not match nuspec version '$nuspecVersion'"
+          }
+          "version=$nuspecVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Pack
+        run: choco pack compter.nuspec --outputdirectory out
+
+      - name: Smoke test install
+        run: |
+          choco install compter-tui --source "$PWD\out" -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install failed" }
+          Get-ChildItem "$env:ChocolateyInstall\bin" -Filter 'compter*'
+          if (-not (Get-ChildItem "$env:ChocolateyInstall\bin" -Filter 'compter*')) {
+            throw "No compter shim found in $env:ChocolateyInstall\bin"
+          }
+
+      - name: Push to Chocolatey
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_SECRET }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          choco push "out\compter-tui.$env:VERSION.nupkg" --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY
+          if ($LASTEXITCODE -ne 0) { throw "choco push failed" }
